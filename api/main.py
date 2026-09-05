@@ -48,7 +48,7 @@ from src.models.pair_features import AccountUniverse, extract_pair_features
 from src.real_identity_mapper import (RealIdentityMapper, RegistryIndex,
                                       candidates_for_clusters)
 from src.retriever import IdentityRetriever
-from src.text_utils import normalizer
+from src.text_utils import latin_skeleton, normalizer, transliterate
 from src.vector_db import QdrantManager
 
 logging.basicConfig(level=logging.INFO)
@@ -108,6 +108,10 @@ class ResolutionState:
                     "confidence_top1": (float(row.confidence_top1)
                                         if row.confidence_top1 is not None
                                         and not pd.isna(row.confidence_top1) else None),
+                    # fraction of the total candidate mass this record holds;
+                    # ~0.5 on the top two means the evidence identifies a PAIR
+                    # of people, not one of them (the twin case)
+                    "share": float(row.share) if not pd.isna(row.share) else None,
                     "full_name": row.full_name,
                     "city": row.city,
                     "birth_year": None if pd.isna(row.birth_year) else int(row.birth_year),
@@ -230,12 +234,17 @@ def build_dossier(record_id: str) -> dict:
         members_data = [state.universe.accounts[m] for m in members]
         ranked = state.mapper.rank(members_data, [c["entity_id"] for c in candidates], top_n=len(candidates))
         evidence = ranked[0]["evidence"] if ranked else []
+        runner_up = candidates[1] if len(candidates) > 1 else None
         real_identity = {
             **top,
             "evidence": [
                 {"feature": name, "level": level, "weight_bits": round(weight, 3)}
                 for name, level, weight in evidence if abs(weight) > 1e-9
             ],
+            # An operator needs to see a near-tie as a near-tie. The evidence
+            # panel alone can't show it: a twin pair produces an identical,
+            # entirely convincing list of reasons for both people.
+            "contested": bool(runner_up and runner_up["confidence"] > 0.9 * top["confidence"]),
             "alternatives": candidates[1:],
         }
 
@@ -254,11 +263,26 @@ def search(q: str, limit: int = 20):
     needle = q.strip().lower()
     if not needle:
         return {"results": []}
+
+    # A Latin query has to survive the same problem the matcher does: the
+    # operator types "fatemeh", the account calls itself "fatmah", and Persian
+    # script never specified which of them was right. So a literal miss falls
+    # back to the consonant skeleton, and a Latin query is also compared
+    # against the transliterated display name - an operator searching for a
+    # person by their romanised name should not have to know which platform
+    # wrote it in Persian.
+    skeleton = latin_skeleton(needle)
+    use_skeleton = len(skeleton) >= 3
+
     results = []
     for rid, acct in state.universe.accounts.items():
         name = str(acct.get("display_name") or "").lower()
         user = str(acct.get("username") or "").lower()
-        if needle in name or needle in user:
+        hit = needle in name or needle in user
+        if not hit and use_skeleton:
+            hit = (skeleton in latin_skeleton(user)
+                   or skeleton in latin_skeleton(transliterate(name)))
+        if hit:
             results.append({
                 "record_id": rid,
                 "platform": acct["platform"],

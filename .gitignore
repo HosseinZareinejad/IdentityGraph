@@ -12,4 +12,10 @@ data/platform_dumps/
 data/cleaned/
 data/graph_features/
 data/social_graphs/
-data/real_validation/
+data/real_validation/*
+# ...except the real-name corpus and its measurements. The corpus is 400KB and
+# regenerating it needs a live Wikidata SPARQL endpoint that rate-limits and
+# 403s ordinary HTTP clients; committing it is what makes the real-data
+# validation in docs/RESULTS.md reproducible by someone else.
+!data/real_validation/name_pairs.csv
+!data/real_validation/metrics.json

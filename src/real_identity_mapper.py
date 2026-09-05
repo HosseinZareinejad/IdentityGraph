@@ -213,19 +213,45 @@ class RealIdentityMapper:
         self.model = model
         self.top1_calibration = top1_calibration
 
-    def calibrate_top1(self, raw_confidence: float) -> float:
+    def calibrate_top1(self, raw_confidence: float, share: float) -> float:
+        """Map (top score, share of the candidate mass) to P(top-1 correct).
+
+        `share` is p1 / sum(p) over the candidate list: the posterior on the
+        top candidate under the assumption that exactly one candidate in the
+        list is the right person. It is what encodes AMBIGUITY, and it is the
+        thing a score-only calibrator is blind to.
+
+        This matters exactly where the system is weakest. Phase 1 planted
+        twins - distinct people sharing name, city and birth year - and a
+        cluster with no job, education, phone or email cannot separate them
+        even in principle. Both twins then score high and near-identically,
+        the argmax picks one at random, and a score-only calibrator happily
+        reports 93% because the winning score is high. The share for that
+        cluster is ~0.5, which says precisely what is true: the evidence
+        supports the pair, not the individual.
+        """
         if not self.top1_calibration:
             return raw_confidence
-        xs = self.top1_calibration["x"]
-        ys = self.top1_calibration["y"]
-        return float(np.interp(raw_confidence, xs, ys))
+        cal = self.top1_calibration
+        if cal.get("kind") == "logistic+isotonic":
+            z = (cal["intercept"]
+                 + cal["coef_score"] * float(_logit(raw_confidence))
+                 + cal["coef_share"] * float(_logit(share)))
+            combined = 1.0 / (1.0 + np.exp(-z))
+            return float(np.interp(combined, cal["x"], cal["y"]))
+        return float(np.interp(raw_confidence, cal["x"], cal["y"]))
 
     def rank(self, members: list[dict], candidate_entity_ids: list[str], top_n: int = 5) -> list[dict]:
         if not candidate_entity_ids:
             return []
         rows = [extract_cluster_features(members, self.index.records[e]) for e in candidate_entity_ids]
         probabilities = self.model.predict_proba(rows)
+        total = float(probabilities.sum())
         order = np.argsort(-probabilities)[:top_n]
+
+        top_score = float(probabilities[order[0]])
+        share = top_score / total if total > 0 else 1.0
+
         results = []
         for rank, i in enumerate(order):
             results.append({
@@ -233,7 +259,10 @@ class RealIdentityMapper:
                 "confidence": float(probabilities[i]),
                 # only the top-ranked entry gets the top-1 calibration; for the
                 # rest the question it answers doesn't apply
-                "confidence_top1": self.calibrate_top1(float(probabilities[i])) if rank == 0 else None,
+                "confidence_top1": self.calibrate_top1(top_score, share) if rank == 0 else None,
+                # how much of the total candidate mass this entry holds - the
+                # UI shows it so an operator can see a two-way tie for what it is
+                "share": float(probabilities[i]) / total if total > 0 else 1.0,
                 "registry": self.index.records[candidate_entity_ids[i]],
                 "evidence": self.model.explain(rows[i]),
                 "features": rows[i],
@@ -241,15 +270,70 @@ class RealIdentityMapper:
         return results
 
 
-def fit_top1_calibration(top1_confidences: list[float], correct: list[int]) -> dict:
-    """Isotonic map from raw top-1 score to observed top-1 accuracy.
+_EPS = 1e-6
 
-    Must be fitted on clusters the ranking model didn't train on, otherwise it
-    just memorises its own fit.
+
+def _logit(p):
+    p = np.clip(np.asarray(p, dtype=np.float64), _EPS, 1 - _EPS)
+    return np.log(p / (1 - p))
+
+
+def fit_top1_calibration(top1_confidences: list[float], shares: list[float],
+                         correct: list[int]) -> dict:
+    """Fit P(top-1 correct) from the top score AND the candidate-mass share.
+
+    Two inputs rather than one, because they answer different questions: the
+    score says "is this person a good fit for the evidence", the share says
+    "is anyone else an equally good fit". A twin cluster scores high on the
+    first and ~0.5 on the second, and only the second is telling the truth.
+
+    Two stages, because neither alone does the job. Isotonic regression
+    calibrates beautifully but is one-dimensional, so it cannot see the share
+    at all. A two-input logistic sees both but imposes a parametric shape that
+    fits this data badly - tried on its own it reported 0.33 on a bin that was
+    right 1% of the time. So the logistic is used only to COMBINE the two
+    inputs into one ranking statistic, and isotonic then calibrates that
+    statistic non-parametrically.
+
+    The two stages are fitted on disjoint halves of the calibration data. An
+    isotonic curve fitted to the same rows the logistic just fitted would
+    reproduce them almost exactly and report a calibration that doesn't hold.
+
+    MUST be fitted on clusters the ranking model didn't train on, and on
+    PREDICTED clusters rather than ground-truth ones - the deployed system
+    never sees a perfect cluster.
     """
     from sklearn.isotonic import IsotonicRegression
+    from sklearn.linear_model import LogisticRegression
+
+    x = np.column_stack([_logit(top1_confidences), _logit(shares)])
+    y = np.asarray(correct, dtype=int)
+    identity = {"kind": "logistic+isotonic", "intercept": 0.0, "coef_score": 1.0,
+                "coef_share": 0.0, "x": [0.0, 1.0], "y": [0.0, 1.0]}
+    if len(np.unique(y)) < 2 or len(y) < 100:
+        return identity
+
+    rng = np.random.default_rng(42)
+    order = rng.permutation(len(y))
+    half = len(order) // 2
+    fit_idx, cal_idx = order[:half], order[half:]
+    if len(np.unique(y[fit_idx])) < 2 or len(np.unique(y[cal_idx])) < 2:
+        return identity
+
+    logistic = LogisticRegression(max_iter=1000).fit(x[fit_idx], y[fit_idx])
+    combined = logistic.predict_proba(x[cal_idx])[:, 1]
 
     iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-    iso.fit(np.asarray(top1_confidences), np.asarray(correct, dtype=float))
-    xs = np.linspace(0.0, 1.0, 101)
-    return {"x": xs.tolist(), "y": iso.predict(xs).tolist()}
+    iso.fit(combined, y[cal_idx].astype(float))
+    grid = np.linspace(0.0, 1.0, 201)
+
+    return {
+        "kind": "logistic+isotonic",
+        "intercept": float(logistic.intercept_[0]),
+        "coef_score": float(logistic.coef_[0][0]),
+        "coef_share": float(logistic.coef_[0][1]),
+        "x": grid.tolist(),
+        "y": iso.predict(grid).tolist(),
+        "n_logistic": int(len(fit_idx)),
+        "n_isotonic": int(len(cal_idx)),
+    }

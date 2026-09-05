@@ -20,14 +20,21 @@ class Settings(BaseSettings):
     match_threshold: float = 0.75
 
     # Cross-platform fusion path. This one is a CALIBRATED PROBABILITY, not an
-    # ad-hoc similarity, so it is directly interpretable. 0.45 is the best-F1
-    # operating point chosen on the VALIDATION split (test F1 0.877, precision
-    # 0.81, recall 0.96) after retraining on the Phase 4 blocker's candidate
-    # distribution - the earlier 0.70 came from a model fitted on the easier
-    # name-only candidate set and did not transfer. Raise it when false
-    # positives are costlier than misses; for a system that attributes
-    # accounts to real people, they usually are.
-    fusion_match_threshold: float = 0.45
+    # ad-hoc similarity, so it is directly interpretable.
+    #
+    # Chosen by Phase 6's protocol, not by a sweep over the reported data.
+    # On held-out validation entities the end-to-end clustering objective is
+    # FLAT from 0.30 to 0.75 (B-cubed F1 0.8883 down to 0.8844, against a
+    # standard error of 0.0045), so the argmax inside it is noise. The tie is
+    # broken one stage further down, on the objective the system actually
+    # exists to serve - mapping a cluster to the right real person - where
+    # 0.30 wins by a margin that is consistent rather than large: top-1 82.8%
+    # vs 82.0%, and 72.4% vs 70.7% on the twin cases.
+    #
+    # The direction makes sense: a stricter threshold buys cluster purity by
+    # splitting clusters, and a split cluster loses exactly the pooled
+    # evidence - the LinkedIn job, the Telegram phone - that the mapper needs.
+    fusion_match_threshold: float = 0.30
     fusion_model_path: str = "data/fusion_model.json"
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

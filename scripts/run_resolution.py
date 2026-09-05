@@ -46,8 +46,15 @@ COLLECTION_NAME = "identity_accounts"
 MODEL_PATH = os.path.join(DATA_DIR, "fusion_model.json")
 
 
-def bcubed(clusters, truth_by_record: dict) -> dict:
-    """B-cubed precision/recall/F1 over accounts."""
+def bcubed(clusters, truth_by_record: dict, score_records: set | None = None) -> dict:
+    """B-cubed precision/recall/F1 over accounts.
+
+    `score_records` restricts which accounts are AVERAGED over, without
+    changing the clusters or the truth groups they are scored against. That
+    distinction matters for held-out evaluation: shrinking the clusters to a
+    record subset first would delete every impurity that came from outside the
+    subset and report a purity the system never achieved.
+    """
     cluster_of = {}
     for idx, cluster in enumerate(clusters):
         for rid in cluster:
@@ -58,8 +65,11 @@ def bcubed(clusters, truth_by_record: dict) -> dict:
     for rid, eid in truth_by_record.items():
         truth_members[eid].add(rid)
 
+    scored = truth_by_record if score_records is None else {
+        rid: eid for rid, eid in truth_by_record.items() if rid in score_records}
+
     precisions, recalls = [], []
-    for rid, eid in truth_by_record.items():
+    for rid, eid in scored.items():
         predicted = cluster_members[cluster_of[rid]]
         actual = truth_members[eid]
         overlap = len(predicted & actual)

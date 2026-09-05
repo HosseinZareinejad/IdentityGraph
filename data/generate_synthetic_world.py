@@ -50,7 +50,8 @@ import pandas as pd
 from faker import Faker
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.text_utils import transliterate, get_nickname_variants, NICKNAME_MAP  # noqa: E402
+from src.text_utils import (NICKNAME_MAP, get_nickname_variants, romanize,  # noqa: E402
+                            transliterate)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -390,11 +391,51 @@ def apply_name_noise(full_name, first_name, last_name):
     return name, (name != full_name)
 
 
-def make_username(first_name, last_name):
+# How one person's own romanisation drifts between sites. These are the
+# substitutions Iranians actually make: the Persian script fixes none of them,
+# so nothing stops the same person writing "hoseyni" on one site and
+# "hosseini" on another.
+SPELLING_DRIFT = [
+    ("ou", "u"), ("u", "oo"), ("i", "ee"), ("gh", "q"), ("kh", "x"),
+    ("a", ""), ("e", ""), ("o", ""),
+]
+
+
+def romanize_stable(text, entity_id):
+    """One canonical romanisation per person, stable across their accounts.
+
+    Seeded from the entity id so a given person always spells their own name
+    the same way by default - the per-platform variation below is drift on top
+    of a fixed choice, not a fresh random spelling each time.
+    """
+    return romanize(text, random.Random(f"{entity_id}:{text}"))
+
+
+def apply_spelling_drift(stem):
+    """One substitution, ~35% of the time - the site-to-site inconsistency."""
+    if random.random() >= 0.35:
+        return stem
+    frm, to = random.choice(SPELLING_DRIFT)
+    idx = stem.find(frm, 1)  # never touch the first character
+    return stem[:idx] + to + stem[idx + len(frm):] if idx > 0 else stem
+
+
+def make_username(first_name, last_name, entity_id):
+    """Build a handle the way a person would: romanise the name with vowels,
+    then join it in one of the common patterns.
+
+    Until Phase 6 this used transliterate(), which drops every short vowel and
+    so produced "mhmdrza.ahmdy". Nobody writes that. Worse, every platform got
+    the SAME vowel-less string, which made handle-to-handle matching far
+    easier than reality and let the username path score on an artefact of the
+    generator. Real handles carry vowels and disagree about them, which is why
+    the matcher now compares consonant skeletons.
+    """
     nicknames = get_nickname_variants(first_name)
     use_nick = bool(nicknames) and random.random() < 0.4
-    base_first = transliterate(random.choice(nicknames) if use_nick else first_name)
-    base_last = transliterate(last_name)
+    chosen_first = random.choice(nicknames) if use_nick else first_name
+    base_first = apply_spelling_drift(romanize_stable(chosen_first, entity_id))
+    base_last = apply_spelling_drift(romanize_stable(last_name, entity_id))
     pattern = random.choice(["dot", "underscore", "concat", "reverse_dot", "first_only"])
     if pattern == "dot":
         uname = f"{base_first}.{base_last}"
@@ -437,7 +478,7 @@ def noisy_phone(phone):
 def make_platform_account(identity, platform):
     record_id = str(uuid.uuid4())
     noisy_name, is_noisy = apply_name_noise(identity["full_name"], identity["first_name"], identity["last_name"])
-    username = make_username(identity["first_name"], identity["last_name"])
+    username = make_username(identity["first_name"], identity["last_name"], identity["entity_id"])
 
     record = {
         "record_id": record_id,

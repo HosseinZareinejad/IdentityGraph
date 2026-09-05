@@ -1,0 +1,396 @@
+{
+  "modalities": [
+    "name",
+    "metadata",
+    "text",
+    "stylometry",
+    "temporal",
+    "graph"
+  ],
+  "features": [
+    "bio_cosine",
+    "birth_year_prox",
+    "city_sim",
+    "education_sim",
+    "email_exact",
+    "graph_clustering_sim",
+    "graph_degree_sim",
+    "graph_neighbor_degree_sim",
+    "job_sim",
+    "name_jw",
+    "name_nickname",
+    "name_phonetic",
+    "name_token_sort",
+    "phone_exact",
+    "posts_cosine",
+    "style_emoji",
+    "style_finglish",
+    "style_function_words",
+    "style_punctuation",
+    "temporal_histogram_cosine",
+    "temporal_peak_match",
+    "username_jw",
+    "username_nodigits",
+    "username_vs_name"
+  ],
+  "selected_on": "validation split (entity-disjoint); a subset is preferred only if it beats the full model by more than two standard errors of F1",
+  "validation": {
+    "auc": 0.9945400011293823,
+    "ap": 0.94262359180541,
+    "f1": 0.9274004683840749,
+    "threshold": 0.45,
+    "decisive_recall": 1.0
+  },
+  "full_model_validation": {
+    "auc": 0.9945400011293823,
+    "ap": 0.94262359180541,
+    "f1": 0.9274004683840749,
+    "threshold": 0.45,
+    "decisive_recall": 1.0
+  },
+  "name_only_validation": {
+    "auc": 0.9933491977765647,
+    "ap": 0.9262364984374147,
+    "f1": 0.9211695906432749,
+    "threshold": 0.45,
+    "decisive_recall": 0.9142857142857143
+  },
+  "all_subsets": [
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9276854668850925,
+      "ap": 0.9423929351372922,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "stylometry",
+        "temporal"
+      ],
+      "f1": 0.9276516038398501,
+      "ap": 0.9427609160226545,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "stylometry",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9274004683840749,
+      "ap": 0.94262359180541,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "temporal"
+      ],
+      "f1": 0.9272514619883041,
+      "ap": 0.9425342570802865,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "stylometry",
+        "temporal"
+      ],
+      "f1": 0.9260899976684542,
+      "ap": 0.9365410350929892,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "stylometry",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9258826280102875,
+      "ap": 0.9364215872787776,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "stylometry",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9256740914419695,
+      "ap": 0.9392775903974426,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "stylometry",
+        "temporal"
+      ],
+      "f1": 0.9254571026722924,
+      "ap": 0.9393747271908193,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "temporal"
+      ],
+      "f1": 0.9254426840633737,
+      "ap": 0.9391660031333794,
+      "decisive_recall": 0.9428571428571428
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9254426840633737,
+      "ap": 0.9390642392677768,
+      "decisive_recall": 0.9428571428571428
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "temporal"
+      ],
+      "f1": 0.9253314724354501,
+      "ap": 0.9358026395715663,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9251162790697675,
+      "ap": 0.9358245326319922,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "stylometry",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9250525332710716,
+      "ap": 0.9321551934876077,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "stylometry",
+        "temporal"
+      ],
+      "f1": 0.9248014946286782,
+      "ap": 0.9322527360280164,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "temporal"
+      ],
+      "f1": 0.9237248479176416,
+      "ap": 0.9315698446555021,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "temporal",
+        "graph"
+      ],
+      "f1": 0.9237248479176416,
+      "ap": 0.9316852959531061,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "graph"
+      ],
+      "f1": 0.9231490159325212,
+      "ap": 0.9380227643529542,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text"
+      ],
+      "f1": 0.9230046948356806,
+      "ap": 0.9380679239184527,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "stylometry"
+      ],
+      "f1": 0.9228604923798359,
+      "ap": 0.9386598527371361,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "text",
+        "stylometry",
+        "graph"
+      ],
+      "f1": 0.9226078799249532,
+      "ap": 0.9385906501044975,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata"
+      ],
+      "f1": 0.9224279353175534,
+      "ap": 0.9304798351086089,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "stylometry"
+      ],
+      "f1": 0.922248243559719,
+      "ap": 0.9319386617587795,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "graph"
+      ],
+      "f1": 0.922175339896859,
+      "ap": 0.9306884438063157,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "metadata",
+        "stylometry",
+        "graph"
+      ],
+      "f1": 0.9221022993899578,
+      "ap": 0.9318356070937427,
+      "decisive_recall": 1.0
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "stylometry",
+        "graph"
+      ],
+      "f1": 0.9216330361332706,
+      "ap": 0.9348567872906247,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "text"
+      ],
+      "f1": 0.9215640365254039,
+      "ap": 0.9343605435283929,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "stylometry"
+      ],
+      "f1": 0.9215319943951423,
+      "ap": 0.9277675899213272,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "stylometry",
+        "graph"
+      ],
+      "f1": 0.9215319943951423,
+      "ap": 0.9276485085566242,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "graph"
+      ],
+      "f1": 0.9215272897634106,
+      "ap": 0.934331332485675,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "text",
+        "stylometry"
+      ],
+      "f1": 0.9214168425991085,
+      "ap": 0.9349173667770138,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name"
+      ],
+      "f1": 0.9211695906432749,
+      "ap": 0.9262364984374147,
+      "decisive_recall": 0.9142857142857143
+    },
+    {
+      "modalities": [
+        "name",
+        "graph"
+      ],
+      "f1": 0.9211695906432749,
+      "ap": 0.9268942050971931,
+      "decisive_recall": 0.9142857142857143
+    }
+  ]
+}

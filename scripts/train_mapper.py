@@ -80,11 +80,18 @@ def predicted_clusters(universe, vectors):
 
 
 def cluster_true_entity(cluster, universe) -> str:
-    """Majority entity in a cluster - its 'real' owner for scoring purposes."""
+    """Majority entity in a cluster - its 'real' owner for scoring purposes.
+
+    A two-way tie is common (a cluster that merged exactly one account from
+    each of two people), so the tie is broken on the entity id. Taking
+    max() over an unordered set would resolve it by string hash, which differs
+    per process and moved the reported cluster counts and accuracy between
+    otherwise identical runs.
+    """
     counts = defaultdict(int)
-    for rid in cluster:
+    for rid in sorted(cluster):
         counts[universe.accounts[rid]["entity_id"]] += 1
-    return max(counts.items(), key=lambda kv: kv[1])[0]
+    return max(sorted(counts.items()), key=lambda kv: kv[1])[0]
 
 
 def build_training_rows(clusters, universe, index, candidate_lists):
@@ -243,14 +250,15 @@ def main():
     mapper = RealIdentityMapper(index, model)
     cal_clusters = pred_by_split["cal"]
     cal_candidates = candidates_for_clusters(cal_clusters, universe, index)
-    cal_conf, cal_correct = [], []
+    cal_conf, cal_share, cal_correct = [], [], []
     for cluster, candidates in zip(cal_clusters, cal_candidates):
         members = [universe.accounts[rid] for rid in cluster]
         ranked = mapper.rank(members, candidates, top_n=1)
         if ranked:
             cal_conf.append(ranked[0]["confidence"])
+            cal_share.append(ranked[0]["share"])
             cal_correct.append(int(ranked[0]["entity_id"] == cluster_true_entity(cluster, universe)))
-    top1_cal = fit_top1_calibration(cal_conf, cal_correct)
+    top1_cal = fit_top1_calibration(cal_conf, cal_share, cal_correct)
     with open(TOP1_CALIBRATION_PATH, "w", encoding="utf-8") as f:
         json.dump(top1_cal, f)
     print(f"  top-1 calibration fitted on {len(cal_conf)} held-out predicted clusters "
@@ -286,6 +294,7 @@ def main():
                 "confidence": entry["confidence"],
                 # what the dossier displays for the top-ranked attribution
                 "confidence_top1": entry["confidence_top1"],
+                "share": entry["share"],
                 "full_name": entry["registry"]["full_name"],
                 "city": entry["registry"]["city"],
                 "birth_year": entry["registry"]["birth_year"],

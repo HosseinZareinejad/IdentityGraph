@@ -13,6 +13,9 @@ Each path here targets a different failure mode of the others:
                س/ص/ث, ت/ط confusions that fuzzy string distance scores low
   name_fuzzy   top-K Jaro-Winkler - the general-purpose path
   username     top-K on handles - works when display names diverge entirely
+  username_skel same, with Latin vowels removed from both sides: one person
+               romanises their own name differently per site, and the vowels
+               are exactly the part Persian script never specified
   cross_field  A's handle vs B's transliterated name and vice versa - the
                Twitter-handle-to-LinkedIn-legal-name case, where neither the
                name path nor the username path fires
@@ -34,7 +37,7 @@ from rapidfuzz import process as rf_process
 from rapidfuzz.distance import JaroWinkler
 
 from src.models.name_model import strip_digits, strip_titles
-from src.text_utils import transliterate
+from src.text_utils import latin_skeleton, transliterate
 
 PLATFORMS = ["twitter", "instagram", "telegram", "linkedin"]
 
@@ -46,6 +49,7 @@ MAX_BLOCK_SIZE = 60
 DEFAULT_CONFIG = {
     "name_fuzzy_top_k": 10,
     "username_top_k": 10,
+    "username_skeleton_top_k": 10,
     "cross_field_top_k": 5,
     "vector_top_k": 5,
     "use_phonetic": True,
@@ -158,12 +162,26 @@ def generate_candidates(universe, vectors: dict | None = None, config: dict | No
         users_b = [strip_digits(str(acc[r]["username"] or "")) for r in ids_b]
         _top_k_pairs(ids_a, ids_b, users_a, users_b, cfg["username_top_k"], "username", pairs, universe)
 
+        # Same handles compared without their vowels. One person romanises
+        # their own name differently on different sites ("hoseyni" here,
+        # "hosseini" there) because Persian script never wrote the vowels
+        # down; the skeleton is what the two spellings genuinely share. Kept
+        # as its own path rather than replacing the literal one so
+        # path_contributions() can show what it actually adds.
+        skel_users_a = [latin_skeleton(u) for u in users_a]
+        skel_users_b = [latin_skeleton(u) for u in users_b]
+        _top_k_pairs(ids_a, ids_b, skel_users_a, skel_users_b, cfg["username_skeleton_top_k"],
+                     "username_skel", pairs, universe)
+
         # cross-field, both directions: handle on one side vs transliterated
-        # legal name on the other
-        translit_a = [transliterate(n) for n in names_a]
-        translit_b = [transliterate(n) for n in names_b]
-        _top_k_pairs(ids_a, ids_b, users_a, translit_b, cfg["cross_field_top_k"], "cross_field", pairs, universe)
-        _top_k_pairs(ids_b, ids_a, users_b, translit_a, cfg["cross_field_top_k"], "cross_field", pairs, universe)
+        # legal name on the other. transliterate() emits no vowels, so this
+        # comparison is only meaningful in skeleton space.
+        translit_a = [latin_skeleton(transliterate(n)) for n in names_a]
+        translit_b = [latin_skeleton(transliterate(n)) for n in names_b]
+        _top_k_pairs(ids_a, ids_b, skel_users_a, translit_b, cfg["cross_field_top_k"],
+                     "cross_field", pairs, universe)
+        _top_k_pairs(ids_b, ids_a, skel_users_b, translit_a, cfg["cross_field_top_k"],
+                     "cross_field", pairs, universe)
 
         if cfg["use_vector"] and vectors:
             _vector_top_k_pairs(ids_a, ids_b, vectors, "bio", cfg["vector_top_k"], "vector_bio", pairs)

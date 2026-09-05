@@ -278,6 +278,16 @@ export default function App() {
                         {ri.education && <span>🎓 {ri.education}</span>}
                       </div>
                       <div className="text-[11px] text-slate-600 font-mono pt-1">{ri.entity_id}</div>
+                      {/* A twin pair produces an identical and entirely
+                          convincing evidence list for both people, so the
+                          evidence panel alone cannot warn about it. This can. */}
+                      {ri.contested && (
+                        <div className="mt-2 rounded border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+                          Contested — another registry record fits this evidence almost as
+                          well. The evidence supports the pair, not this individual; see the
+                          candidates below before acting on it.
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-4">
                       <Confidence value={ri.confidence_top1 ?? ri.confidence} label="calibrated" />
@@ -301,18 +311,29 @@ export default function App() {
                     <div className="pt-3 border-t border-slate-800">
                       <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">
                         Other candidates considered
+                        <span className="normal-case tracking-normal text-slate-600 ml-2">
+                          — share of the evidence, across all candidates
+                        </span>
                       </div>
+                      {/* Deliberately `share`, not `confidence`. The headline
+                          number above is P(the top pick is right); a
+                          candidate's own confidence answers a different
+                          question and can sit ABOVE it, which reads as though
+                          the runner-up won. Shares are one scale, they sum to
+                          1 over the candidate list, and a near-tie is visible
+                          as one. */}
                       <div className="space-y-1">
-                        {ri.alternatives.map((alt, i) => (
+                        {[{ ...ri, rank: 0 }, ...ri.alternatives].map((alt, i) => (
                           <div key={i} className="flex items-center justify-between text-sm">
-                            <span className="text-slate-400">
+                            <span className={i === 0 ? "text-slate-200" : "text-slate-400"}>
+                              {i === 0 && <span className="text-emerald-500 mr-1">▸</span>}
                               {alt.full_name}
                               <span className="text-slate-600 text-xs ml-2">
                                 {alt.city} · {alt.birth_year}
                               </span>
                             </span>
                             <span className="text-slate-500 tabular-nums text-xs">
-                              {Math.round(alt.confidence * 100)}%
+                              {alt.share != null ? `${Math.round(alt.share * 100)}%` : "—"}
                             </span>
                           </div>
                         ))}

@@ -1,0 +1,51 @@
+{
+  "source": "wikidata: Iranian humans carrying both fa and en labels",
+  "transliteration": {
+    "n": 7812,
+    "exact_skeleton_match": 0.001152073732718894,
+    "jw_mean": 0.7851168244190581,
+    "jw_median": 0.7948717948717947,
+    "share_jw_ge_0.80": 0.47657450076804914,
+    "share_jw_ge_0.85": 0.23783922171018945,
+    "skeleton_jw_mean": 0.9647874553035112,
+    "skeleton_exact_match": 0.5825652841781874,
+    "skeleton_share_jw_ge_0.85": 0.93868407578085
+  },
+  "cross_script_retrieval": {
+    "corpus_size": 7812,
+    "literal": {
+      "top1": 0.6612903225806451,
+      "top5": 0.8172043010752689,
+      "top10": 0.8634152585765489,
+      "top20": 0.8986175115207373,
+      "top50": 0.9354838709677419,
+      "median_rank": 1,
+      "mrr": 0.7322910212134476
+    },
+    "consonant_skeleton": {
+      "top1": 0.8997695852534562,
+      "top5": 0.9340757808499744,
+      "top10": 0.9464925755248336,
+      "top20": 0.9545570916538658,
+      "top50": 0.9653097798259088,
+      "median_rank": 1,
+      "mrr": 0.9157323568130769
+    }
+  },
+  "phonetic_blocking_real": {
+    "n_names": 7812,
+    "distinct_keys": 7792,
+    "singleton_key_share": 0.9974332648870636,
+    "largest_block": 2,
+    "pairs_generated": 20,
+    "reduction_ratio": 6.555278070634826e-07,
+    "blocks_over_cap": 0,
+    "names_in_over_cap_blocks_share": 0.0
+  },
+  "homophone_collapsing": {
+    "names_with_ambiguous_letter": 2256,
+    "variant_merge_rate": 1.0,
+    "distinct_names": 7793,
+    "distinct_keys": 7792
+  }
+}

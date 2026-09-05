@@ -74,9 +74,11 @@ def _match_one_platform_pair(edges, universe, platform_a):
         graph.add_edge(a, b, weight=s)
 
     accepted = []
+    # sorted() at every step, for the same PYTHONHASHSEED-independence reason
+    # documented in enforce_cluster_hygiene
     for component in nx.connected_components(graph):
-        sub = graph.subgraph(component)
         nodes = sorted(component)
+        edges_in = _induced_edges(graph, nodes)
         # The graph is bipartite by construction (every edge joins two
         # different platforms), so the sides are just the two platform groups.
         side_a = [n for n in nodes if universe.accounts[n]["platform"] == platform_a]
@@ -85,17 +87,17 @@ def _match_one_platform_pair(edges, universe, platform_a):
             continue
 
         if len(nodes) > MAX_EXACT_COMPONENT:
-            accepted.extend(_greedy_match(sub))
+            accepted.extend(_greedy_match(edges_in))
             continue
 
         idx_a = {n: i for i, n in enumerate(side_a)}
         idx_b = {n: i for i, n in enumerate(side_b)}
         cost = np.zeros((len(side_a), len(side_b)), dtype=np.float64)
-        for u, v, data in sub.edges(data=True):
+        for u, v, weight in edges_in:
             if u in idx_a and v in idx_b:
-                cost[idx_a[u], idx_b[v]] = -data["weight"]
+                cost[idx_a[u], idx_b[v]] = -weight
             elif v in idx_a and u in idx_b:
-                cost[idx_a[v], idx_b[u]] = -data["weight"]
+                cost[idx_a[v], idx_b[u]] = -weight
 
         rows, cols = linear_sum_assignment(cost)
         for r, c in zip(rows, cols):
@@ -105,25 +107,28 @@ def _match_one_platform_pair(edges, universe, platform_a):
     return accepted
 
 
-def _greedy_match(sub):
-    """1/2-approximation fallback for oversized components."""
-    edges = sorted(sub.edges(data=True), key=lambda e: -e[2]["weight"])
+def _greedy_match(edges_in):
+    """1/2-approximation fallback for oversized components.
+
+    Ties are broken on the endpoint ids rather than on arrival order, so which
+    edge wins does not depend on how the caller enumerated them.
+    """
     used = set()
     accepted = []
-    for u, v, data in edges:
+    for u, v, weight in sorted(edges_in, key=lambda e: (-e[2], e[0], e[1])):
         if u in used or v in used:
             continue
         used.add(u)
         used.add(v)
-        accepted.append((u, v, data["weight"]))
+        accepted.append((u, v, weight))
     return accepted
 
 
 def build_clusters(accepted_edges, all_record_ids):
     """Connected components over accepted edges, including singletons."""
     graph = nx.Graph()
-    graph.add_nodes_from(all_record_ids)
-    for a, b, s in accepted_edges:
+    graph.add_nodes_from(sorted(all_record_ids))
+    for a, b, s in sorted(accepted_edges):
         graph.add_edge(a, b, weight=s)
     return [set(c) for c in nx.connected_components(graph)], graph
 
@@ -144,23 +149,72 @@ def enforce_cluster_hygiene(clusters, graph, universe):
     working = graph.copy()
 
     clean = []
-    queue = list(clusters)
+    queue = [sorted(c) for c in clusters]
     while queue:
         cluster = queue.pop()
         if len(cluster) <= 1 or _is_consistent(cluster, universe):
-            clean.append(cluster)
+            clean.append(set(cluster))
             continue
 
-        sub = working.subgraph(cluster)
-        if sub.number_of_edges() == 0:
+        edges = _induced_edges(working, cluster)
+        if not edges:
             clean.extend({n} for n in cluster)
             continue
 
-        weakest = min(sub.edges(data=True), key=lambda e: e[2].get("weight", 0.0))
+        # Ties on weight are broken by endpoint id so the split is reproducible.
+        weakest = min(edges, key=lambda e: (e[2], e[0], e[1]))
         working.remove_edge(weakest[0], weakest[1])
-        for component in nx.connected_components(working.subgraph(cluster)):
-            queue.append(set(component))
+        queue.extend(_components(working, cluster))
     return clean
+
+
+def _induced_edges(graph, nodes):
+    """Edges inside `nodes`, enumerated in a fixed order.
+
+    Deliberately not `graph.subgraph(nodes).edges()`. A networkx subgraph is a
+    filtered VIEW, and FilterAtlas.__iter__ walks `NODE_OK.nodes`, which is a
+    plain Python set built from whatever was passed in - so iterating a
+    subgraph is ordered by string hashes and therefore differs in every
+    process, no matter how carefully the caller sorts its input.
+
+    That is not a cosmetic issue here: it changes which edge this function
+    calls the weakest, which changes how a cluster splits. Measured across
+    processes on identical input it moved the final cluster count by up to 9
+    and end-to-end mapping accuracy by ~0.4 points - small, but enough that a
+    reader rerunning the pipeline would not reproduce docs/RESULTS.md.
+    """
+    members = set(nodes)
+    seen = set()
+    edges = []
+    for u in nodes:
+        for v in sorted(graph.adj[u]):
+            if v in members and (v, u) not in seen:
+                seen.add((u, v))
+                edges.append((u, v, graph.adj[u][v].get("weight", 0.0)))
+    return edges
+
+
+def _components(graph, nodes):
+    """Connected components of the induced subgraph, as sorted lists, in a
+    fixed order. Same reason as _induced_edges: nx.connected_components on a
+    subgraph view inherits the view's hash-ordered iteration."""
+    members = set(nodes)
+    seen = set()
+    out = []
+    for start in nodes:
+        if start in seen:
+            continue
+        component, stack = [], [start]
+        seen.add(start)
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            for neighbour in sorted(graph.adj[node]):
+                if neighbour in members and neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        out.append(sorted(component))
+    return out
 
 
 def _is_consistent(cluster, universe) -> bool:
