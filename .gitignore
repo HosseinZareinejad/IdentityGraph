@@ -3,4 +3,13 @@ __pycache__/
 ui/node_modules/
 qdrant_storage/
 .env
-data/
+
+# Generated datasets stay out of git (large, reproducible via the scripts
+# below); the scripts themselves are tracked.
+data/*.parquet
+data/*.csv
+data/platform_dumps/
+data/cleaned/
+data/graph_features/
+data/social_graphs/
+data/real_validation/
