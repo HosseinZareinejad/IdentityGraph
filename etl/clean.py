@@ -30,7 +30,7 @@ import pandas as pd
 from hazm import Normalizer
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.text_utils import transliterate  # noqa: E402
+from src.text_utils import canonicalize_phone, compute_phonetic_key, transliterate  # noqa: E402
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLATFORM_DUMP_DIR = os.path.join(BASE_DIR, "data", "platform_dumps")
@@ -39,16 +39,9 @@ PLATFORMS = ["twitter", "instagram", "telegram", "linkedin"]
 
 TEXT_FIELDS = ["display_name", "bio", "city", "job_title", "education"]
 
-# Phonetic-equivalence classes (post hazm-normalization) used ONLY for a
-# blocking key, never for display or scoring.
-_PHONETIC_CLASSES = [
-    ("ز", "ذ"),
-    ("س", "ص", "ث"),
-    ("ت", "ط"),
-    ("ق", "غ"),
-]
-_PHONETIC_MAP = {ch: cls[0] for cls in _PHONETIC_CLASSES for ch in cls}
-
+# compute_phonetic_key / canonicalize_phone now live in src/text_utils.py so
+# the Phase 5 registry mapper can use the identical implementation on registry
+# records (which never pass through this ETL).
 _normalizer = Normalizer()
 
 
@@ -57,29 +50,6 @@ def normalize_field(value):
         return None
     text = _normalizer.normalize(str(value).strip())
     return text if text else None
-
-
-def compute_phonetic_key(name: str) -> str:
-    """Collapse homophone letters + strip spaces, for exact-match blocking."""
-    if not name:
-        return ""
-    normalized = _normalizer.normalize(name)
-    collapsed = "".join(_PHONETIC_MAP.get(ch, ch) for ch in normalized)
-    return collapsed.replace(" ", "").replace("‌", "")
-
-
-def canonicalize_phone(phone):
-    """+98/0-prefix -> a single canonical +98... form, for blocking only."""
-    if phone is None or (isinstance(phone, float) and pd.isna(phone)):
-        return None
-    digits = "".join(ch for ch in str(phone) if ch.isdigit() or ch == "+")
-    if digits.startswith("+98"):
-        return digits
-    if digits.startswith("0098"):
-        return "+98" + digits[4:]
-    if digits.startswith("0"):
-        return "+98" + digits[1:]
-    return digits
 
 
 def parse_posts(posts_json: str) -> list[dict]:

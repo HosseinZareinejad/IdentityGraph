@@ -44,6 +44,47 @@ NICKNAME_MAP = {
 }
 
 
+# Homophone-equivalence classes, collapsed to the first member of each class.
+# Used only to build a blocking key - never for display or scoring.
+_PHONETIC_CLASSES = [
+    ("ز", "ذ"),
+    ("س", "ص", "ث"),
+    ("ت", "ط"),
+    ("ق", "غ"),
+]
+_PHONETIC_MAP = {ch: cls[0] for cls in _PHONETIC_CLASSES for ch in cls}
+
+_phonetic_normalizer = Normalizer()
+
+
+def compute_phonetic_key(name: str) -> str:
+    """Collapse homophone letters + strip spaces, for exact-match blocking.
+
+    Lives here rather than in etl/clean.py because the Phase 5 registry
+    mapper needs the same key for registry records, which never pass through
+    the ETL. One implementation, so the two sides can't drift.
+    """
+    if not name:
+        return ""
+    normalized = _phonetic_normalizer.normalize(name)
+    collapsed = "".join(_PHONETIC_MAP.get(ch, ch) for ch in normalized)
+    return collapsed.replace(" ", "").replace("‌", "")
+
+
+def canonicalize_phone(phone):
+    """+98/0-prefix -> a single canonical +98... form, for blocking only."""
+    if phone is None or (isinstance(phone, float) and phone != phone):  # NaN
+        return None
+    digits = "".join(ch for ch in str(phone) if ch.isdigit() or ch == "+")
+    if digits.startswith("+98"):
+        return digits
+    if digits.startswith("0098"):
+        return "+98" + digits[4:]
+    if digits.startswith("0"):
+        return "+98" + digits[1:]
+    return digits
+
+
 def transliterate(text: str) -> str:
     """Deterministic Persian -> Latin (Finglish) transliteration, lowercase,
     with no separators (suitable for turning a name into a username stem)."""
