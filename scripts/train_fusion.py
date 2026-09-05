@@ -29,13 +29,12 @@ os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 import numpy as np
 import pandas as pd
 from qdrant_client import QdrantClient
-from rapidfuzz import process as rf_process
-from rapidfuzz.distance import JaroWinkler
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
+from src import blocking  # noqa: E402
 from src.config import settings  # noqa: E402
 from src.models import text_model  # noqa: E402
 from src.models.fusion_model import (FellegiSunterFusion, brier_score,  # noqa: E402
@@ -53,43 +52,19 @@ CALIBRATION_ENTITY_FRACTION = 0.15
 RANDOM_SEED = 42
 
 
-def build_candidate_pairs(universe: AccountUniverse) -> pd.DataFrame:
-    """Blocking stand-in: for every ordered platform pair, take each account's
-    top-K most name-similar accounts on the other platform.
+def build_candidate_pairs(universe: AccountUniverse, vectors: dict) -> pd.DataFrame:
+    """Use the Phase 4 production blocker to generate the training pairs.
 
-    Phase 4 replaces this with a properly tuned multi-path blocker; it exists
-    here so the fusion model trains on a realistic candidate distribution.
+    This originally used a name-only top-K stand-in, which trained the model
+    on a much easier negative distribution than the one it faces at serving
+    time: the real multi-path blocker produces 3x the candidates, and the
+    extra ones are precisely the hard cases the name path alone never
+    surfaced (handle-vs-legal-name matches, embedding neighbours). A model
+    fitted on the easy distribution over-trusts its evidence when the harder
+    one arrives - the classic train/serve mismatch. Training on exactly what
+    the blocker emits keeps the learned weights and the calibration valid.
     """
-    by_platform = {p: [] for p in PLATFORMS}
-    for rid, acct in universe.accounts.items():
-        by_platform[acct["platform"]].append(rid)
-
-    pairs = set()
-    for i, plat_a in enumerate(PLATFORMS):
-        for plat_b in PLATFORMS[i + 1:]:
-            ids_a, ids_b = by_platform[plat_a], by_platform[plat_b]
-            names_a = [str(universe.accounts[r]["display_name"] or "") for r in ids_a]
-            names_b = [str(universe.accounts[r]["display_name"] or "") for r in ids_b]
-
-            # C-optimised all-pairs similarity, then top-K per row
-            sim = rf_process.cdist(names_a, names_b, scorer=JaroWinkler.normalized_similarity,
-                                   workers=-1, dtype=np.float32)
-            top_k = np.argpartition(-sim, kth=min(CANDIDATES_PER_ACCOUNT, sim.shape[1] - 1),
-                                    axis=1)[:, :CANDIDATES_PER_ACCOUNT]
-            for row_idx, col_indices in enumerate(top_k):
-                for col_idx in col_indices:
-                    pairs.add((ids_a[row_idx], ids_b[col_idx]))
-            print(f"    {plat_a}-{plat_b}: {sim.shape[0]}x{sim.shape[1]} -> {len(pairs)} cumulative pairs")
-
-    rows = []
-    for rid_a, rid_b in pairs:
-        a, b = universe.accounts[rid_a], universe.accounts[rid_b]
-        rows.append({
-            "record_id_a": rid_a, "record_id_b": rid_b,
-            "entity_id_a": a["entity_id"], "entity_id_b": b["entity_id"],
-            "label": int(a["entity_id"] == b["entity_id"]),
-        })
-    return pd.DataFrame(rows)
+    return blocking.generate_candidates(universe, vectors=vectors)
 
 
 def split_by_entity(pairs: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -163,8 +138,8 @@ def main():
     universe = AccountUniverse.load(DATA_DIR, vectors=vectors)
     print(f"  {len(universe)} accounts")
 
-    print("Building candidate pairs (blocking stand-in)...")
-    pairs = build_candidate_pairs(universe)
+    print("Building candidate pairs (Phase 4 multi-path blocker)...")
+    pairs = build_candidate_pairs(universe, vectors)
     print(f"  {len(pairs)} candidate pairs, {int(pairs['label'].sum())} of them true matches")
 
     gt = pd.read_parquet(os.path.join(DATA_DIR, "ground_truth_pairs.parquet"))
@@ -200,12 +175,30 @@ def main():
     model.save(MODEL_PATH)
     print(f"\n  saved to {MODEL_PATH}")
 
+    # The operating threshold is chosen on the CALIBRATION split and only then
+    # applied to test. Picking the threshold from the test sweep would be
+    # selecting a hyperparameter on the data used to report the result.
+    calib_eval = evaluate(model, calib_rows, calib_pairs["label"].tolist())
+    chosen_threshold = calib_eval["best_f1"]["threshold"]
+    print(f"\n  Operating threshold chosen on validation split: {chosen_threshold:.2f} "
+          f"(val F1={calib_eval['best_f1']['f1']:.4f})")
+
     print("\n=== Test-set performance (full model, calibrated) ===")
     full = evaluate(model, test_rows, test_pairs["label"].tolist())
     print(f"  ROC-AUC: {full['auc']:.4f}   Average precision: {full['average_precision']:.4f}")
     b = full["best_f1"]
-    print(f"  Best F1: {b['f1']:.4f} at threshold {b['threshold']:.2f} "
-          f"(precision {b['precision']:.4f}, recall {b['recall']:.4f})")
+    print(f"  Best F1 on test sweep (upper bound): {b['f1']:.4f} at threshold {b['threshold']:.2f}")
+
+    test_probs = model.predict_proba(test_rows)
+    pred = test_probs >= chosen_threshold
+    tp = int((pred & (test_labels == 1)).sum())
+    fp = int((pred & (test_labels == 0)).sum())
+    fn = int((~pred & (test_labels == 1)).sum())
+    prec = tp / (tp + fp) if tp + fp else 0.0
+    rec = tp / (tp + fn) if tp + fn else 0.0
+    f1_at = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+    print(f"  At the validation-chosen threshold {chosen_threshold:.2f}: "
+          f"F1={f1_at:.4f} (precision {prec:.4f}, recall {rec:.4f})")
 
     print("\n=== Calibration AFTER isotonic fit ===")
     cal_probs = model.predict_proba(test_rows)
